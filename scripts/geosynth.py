@@ -24,6 +24,26 @@ from ..ControlNet.ldm.models.diffusion.ddpm import LatentDiffusion
 from ..ControlNet.ldm.util import log_txt_as_img, exists, instantiate_from_config
 from ..ControlNet.ldm.models.diffusion.ddim import DDIMSampler
 
+class AdjacentSatelliteProcessor(nn.Module):
+    def __init__(self, dims=2, channels=256, out_channels=256):
+        super().__init__()
+        
+        # Process adjacent satellite image
+        self.adjacent_processor = TimestepEmbedSequential(
+            conv_nd(dims, 3, 16, 3, padding=1),
+            nn.SiLU(),
+            conv_nd(dims, 16, 32, 3, padding=1, stride=2),
+            nn.SiLU(),
+            conv_nd(dims, 32, 64, 3, padding=1, stride=2),
+            nn.SiLU(),
+            conv_nd(dims, 64, 128, 3, padding=1, stride=2),
+            nn.SiLU(),
+            zero_module(conv_nd(dims, 128, out_channels, 3, padding=1)),
+        )
+        
+    def forward(self, x, emb, context):
+        return self.adjacent_processor(x, emb, context)
+    
 
 class LocationEncoder(nn.Module):
     def __init__(self, embed_dim=256, out_dim=256, num_heads=4):
@@ -233,6 +253,10 @@ class ControlNet(nn.Module):
             zero_module(conv_nd(dims, 256, model_channels, 3, padding=1)),
         )
 
+        self.adjacent_sat_processor = AdjacentSatelliteProcessor(
+            dims=dims, channels=model_channels, out_channels=model_channels
+        )
+        
         self.loc_blocks = nn.ModuleList([LocationEncoder(out_dim=model_channels)])
 
         self._feature_size = model_channels
@@ -380,11 +404,16 @@ class ControlNet(nn.Module):
             zero_module(conv_nd(self.dims, channels, channels, 1, padding=0))
         )
 
-    def forward(self, x, hint, timesteps, context, location, **kwargs):
+    def forward(self, x, hint, timesteps, context, location, adjacent_sat=None, **kwargs):
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
         emb = self.time_embed(t_emb)
 
         guided_hint = self.input_hint_block(hint, emb, context)
+        
+        # Process adjacent satellite image if provided
+        adjacent_features = None
+        if adjacent_sat is not None:
+            adjacent_features = self.adjacent_sat_processor(adjacent_sat, emb, context)
 
         outs = []
         locs = []
@@ -401,6 +430,12 @@ class ControlNet(nn.Module):
                 guided_hint = None
             else:
                 h = module(h, emb, context)
+                
+            # Add adjacent satellite features at appropriate resolution
+            if adjacent_features is not None and h.shape[2:] == adjacent_features.shape[2:]:
+                h = h + adjacent_features
+                adjacent_features = None
+                
             loc_input, loc_zero = loc_module(loc_input, emb.unsqueeze(1))
             locs.append(loc_zero)
             outs.append(zero_conv(h, emb, context))
@@ -426,15 +461,25 @@ class ControlLDM(LatentDiffusion):
     @torch.no_grad()
     def get_input(self, batch, k, bs=None, *args, **kwargs):
         x, c = super().get_input(batch, self.first_stage_key, *args, **kwargs)
-        control = batch[self.control_key]
+        control = batch[self.control_key]  # OSM image
         location = batch["location"]
+        adjacent_sat = batch["adjacent_satellite"]  # New adjacent satellite input
+        
         if bs is not None:
             control = control[:bs]
+            adjacent_sat = adjacent_sat[:bs]
+            
         control = control.to(self.device)
         location = location.to(self.device)
+        adjacent_sat = adjacent_sat.to(self.device)
+        
         control = einops.rearrange(control, "b h w c -> b c h w")
+        adjacent_sat = einops.rearrange(adjacent_sat, "b h w c -> b c h w")
+        
         control = control.to(memory_format=torch.contiguous_format).float()
-        return x, dict(c_crossattn=[c], c_concat=[control], c_loc=location)
+        adjacent_sat = adjacent_sat.to(memory_format=torch.contiguous_format).float()
+        
+        return x, dict(c_crossattn=[c], c_concat=[control], c_loc=location, c_adjacent=adjacent_sat)
 
     def apply_model(self, x_noisy, t, cond, *args, **kwargs):
         assert isinstance(cond, dict)
@@ -457,6 +502,7 @@ class ControlLDM(LatentDiffusion):
                 location=cond["c_loc"],
                 timesteps=t,
                 context=cond_txt,
+                adjacent_sat=cond.get("c_adjacent")  # Pass adjacent satellite
             )
             control = [c * scale for c, scale in zip(control, self.control_scales)]
             locs = [c * scale for c, scale in zip(locs, self.loc_scales)]
