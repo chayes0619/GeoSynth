@@ -40,12 +40,9 @@ class Dataset(Dataset):
         )
         
         # Load adjacent satellite image if directory is provided
-        if self.adjacent_satellite_dir is not None:
-            # Construct adjacent image filename - you may need to adjust this based on your naming convention
-            # This assumes adjacent images follow a pattern like the original filename with "_adjacent" suffix
-            base_name = os.path.basename(target_filename)
-            name_without_ext = os.path.splitext(base_name)[0]
-            adjacent_filename = os.path.join(self.adjacent_satellite_dir, f"{name_without_ext}_adjacent.png")
+        if self.adjacent_satellite_dir is not None and "adjacent_satellite" in item:
+            # Use the path already in the JSON data
+            adjacent_filename = "../" + item["adjacent_satellite"]
             
             # Check if the adjacent image exists
             if os.path.exists(adjacent_filename):
@@ -57,12 +54,7 @@ class Dataset(Dataset):
                 
                 result["adjacent_satellite"] = adjacent
             else:
-                # If no adjacent image exists, you could either:
-                # 1. Use a blank/zero image of the same size as the target
-                # 2. Skip this sample (not recommended during training)
-                # 3. Use the source image as a fallback (least preferred)
-                
-                # Option 1: Blank image
+                # If no adjacent image exists, create a blank image
                 result["adjacent_satellite"] = np.zeros_like(source)
                 
                 # Log missing adjacent images for debugging
