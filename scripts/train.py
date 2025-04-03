@@ -23,9 +23,9 @@ model.learning_rate = learning_rate
 model.sd_locked = sd_locked
 model.only_mid_control = only_mid_control
 
-# Set up the control scales for the new adjacent satellite conditioning
-# Initialize with default values of 1.0
-model.adjacent_scales = [1.0] * 13
+# The model uses control_scales for all control inputs, including adjacent satellite
+# You can leave this as is or adjust if needed
+# model.control_scales = [1.0] * 13
 
 checkpoint = ModelCheckpoint(
     dirpath=os.path.join("checkpoint", "geosynth"),
@@ -37,7 +37,7 @@ checkpoint = ModelCheckpoint(
 dataset = Dataset(
     prompt_path="GeoSynth/scripts/prompt_with_locations.json",
     location_embeds_path="GeoSynth/scripts/location_embeds.npy",
-    adjacent_satellite_path="GeoSynth/scripts/adjacent_satellite_images",  # Add path to adjacent satellite images
+    adjacent_satellite_dir="GeoSynth/scripts/adjacent_satellite_images",  # Corrected parameter name
 )
 
 dataloader = DataLoader(

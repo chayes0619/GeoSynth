@@ -256,7 +256,7 @@ class ControlNet(nn.Module):
         self.adjacent_sat_processor = AdjacentSatelliteProcessor(
             dims=dims, channels=model_channels, out_channels=model_channels
         )
-        
+
         self.loc_blocks = nn.ModuleList([LocationEncoder(out_dim=model_channels)])
 
         self._feature_size = model_channels
@@ -405,6 +405,11 @@ class ControlNet(nn.Module):
         )
 
     def forward(self, x, hint, timesteps, context, location, adjacent_sat=None, **kwargs):
+        if adjacent_sat is not None:
+          print(f"Adjacent satellite provided: Shape={adjacent_sat.shape}, Type={adjacent_sat.dtype}")
+          print(f"Adjacent satellite stats: Min={adjacent_sat.min().item()}, Max={adjacent_sat.max().item()}, Mean={adjacent_sat.mean().item()}")
+        else:
+          print("No adjacent satellite provided")
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
         emb = self.time_embed(t_emb)
 
@@ -451,6 +456,8 @@ class ControlLDM(LatentDiffusion):
     def __init__(
         self, control_stage_config, control_key, only_mid_control, *args, **kwargs
     ):
+        self.adjacent_key = kwargs.pop('adjacent_key', "adjacent_satellite") if 'adjacent_key' in kwargs else "adjacent_satellite"
+        
         super().__init__(*args, **kwargs)
         self.control_model = instantiate_from_config(control_stage_config)
         self.control_key = control_key
