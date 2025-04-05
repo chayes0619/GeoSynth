@@ -2,6 +2,8 @@ import einops
 import torch
 import torch as th
 import torch.nn as nn
+import torch.nn.functional as F
+
 
 from ..ControlNet.ldm.modules.diffusionmodules.util import (
     conv_nd,
@@ -456,10 +458,24 @@ class ControlNet(nn.Module):
             else:
                 h = module(h, emb, context)
                 
-            # Add adjacent satellite features at appropriate resolution
-            if adjacent_features is not None and h.shape[2:] == adjacent_features.shape[2:]:
-                h = h + adjacent_features
-                adjacent_features = None
+            if adjacent_features is not None:
+                # Check if the channel dimensions match
+                if h.shape[1] != adjacent_features.shape[1]:
+                    # If channels don't match, we need to adapt the adjacent features
+                    # Option 1: Use a 1x1 convolution to match channels
+                    channel_adapter = nn.Conv2d(adjacent_features.shape[1], h.shape[1], 
+                                                kernel_size=1).to(h.device)
+                    adjacent_features = channel_adapter(adjacent_features)
+                
+                # Now resize the spatial dimensions
+                resized_adjacent = F.interpolate(
+                    adjacent_features, 
+                    size=h.shape[2:], 
+                    mode='bilinear', 
+                    align_corners=False
+                )
+                print(f'adjacent features added at resolution {h.shape[2:]}!')
+                h = h + resized_adjacent * 1.5
                 
             loc_input, loc_zero = loc_module(loc_input, emb.unsqueeze(1))
             locs.append(loc_zero)
