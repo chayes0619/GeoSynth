@@ -28,23 +28,43 @@ class AdjacentSatelliteProcessor(nn.Module):
     def __init__(self, dims=2, channels=256, out_channels=256):
         super().__init__()
         
-        # Process adjacent satellite image
-        self.adjacent_processor = TimestepEmbedSequential(
-            conv_nd(dims, 3, 16, 3, padding=1),
+        # Multi-scale feature extraction
+        self.multi_scale_branches = nn.ModuleList([
+            nn.Sequential(
+                # Dilated convolutions with different rates
+                conv_nd(dims, 3, 32, 3, padding=1, dilation=1),
+                nn.BatchNorm2d(32),
+                nn.SiLU(),
+                conv_nd(dims, 32, 64, 3, padding=2, dilation=2),
+                nn.BatchNorm2d(64),
+                nn.SiLU()
+            ),
+            nn.Sequential(
+                conv_nd(dims, 3, 32, 5, padding=2, dilation=1),
+                nn.BatchNorm2d(32),
+                nn.SiLU(),
+                conv_nd(dims, 32, 64, 5, padding=4, dilation=2),
+                nn.BatchNorm2d(64),
+                nn.SiLU()
+            )
+        ])
+        
+        # Feature fusion with residual connection
+        self.feature_fusion = nn.Sequential(
+            conv_nd(dims, 128, 256, 1),
+            nn.BatchNorm2d(256),
             nn.SiLU(),
-            conv_nd(dims, 16, 32, 3, padding=1, stride=2),
-            nn.SiLU(),
-            conv_nd(dims, 32, 64, 3, padding=1, stride=2),
-            nn.SiLU(),
-            conv_nd(dims, 64, 128, 3, padding=1, stride=2),
-            nn.SiLU(),
-            zero_module(conv_nd(dims, 128, out_channels, 3, padding=1)),
+            zero_module(conv_nd(dims, 256, out_channels, 3, padding=1))
         )
         
-    def forward(self, x, emb, context):
-        return self.adjacent_processor(x, emb, context)
-    
-
+    def forward(self, x, emb=None, context=None):
+        # Multi-scale feature extraction
+        multi_scale_features = [branch(x) for branch in self.multi_scale_branches]
+        
+        # Concatenate and fuse features
+        fused_features = torch.cat(multi_scale_features, dim=1)
+        
+        return self.feature_fusion(fused_features)
 class LocationEncoder(nn.Module):
     def __init__(self, embed_dim=256, out_dim=256, num_heads=4):
         super().__init__()
@@ -405,11 +425,11 @@ class ControlNet(nn.Module):
         )
 
     def forward(self, x, hint, timesteps, context, location, adjacent_sat=None, **kwargs):
-        if adjacent_sat is not None:
-          print(f"Adjacent satellite provided: Shape={adjacent_sat.shape}, Type={adjacent_sat.dtype}")
-          print(f"Adjacent satellite stats: Min={adjacent_sat.min().item()}, Max={adjacent_sat.max().item()}, Mean={adjacent_sat.mean().item()}")
-        else:
-          print("No adjacent satellite provided")
+        # if adjacent_sat is not None:
+        #   print(f"Adjacent satellite provided: Shape={adjacent_sat.shape}, Type={adjacent_sat.dtype}")
+        #   print(f"Adjacent satellite stats: Min={adjacent_sat.min().item()}, Max={adjacent_sat.max().item()}, Mean={adjacent_sat.mean().item()}")
+        # else:
+        #   print("No adjacent satellite provided")
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
         emb = self.time_embed(t_emb)
 
