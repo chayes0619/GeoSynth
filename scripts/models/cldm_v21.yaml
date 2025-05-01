@@ -9,6 +9,7 @@ model:
     first_stage_key: "jpg"
     cond_stage_key: "txt"
     control_key: "hint"
+    adjacent_key: "adjacent_satellite"
     image_size: 64
     channels: 4
     cond_stage_trainable: false
@@ -26,10 +27,10 @@ model:
         in_channels: 4
         hint_channels: 3
         model_channels: 320
-        attention_resolutions: [ 4, 2, 1 ]
+        attention_resolutions: [4, 2, 1]
         num_res_blocks: 2
-        channel_mult: [ 1, 2, 4, 4 ]
-        num_head_channels: 64 # need to fix for flash-attn
+        channel_mult: [1, 2, 4, 4]
+        num_head_channels: 64
         use_spatial_transformer: True
         use_linear_in_transformer: True
         transformer_depth: 1
@@ -44,10 +45,10 @@ model:
         in_channels: 4
         out_channels: 4
         model_channels: 320
-        attention_resolutions: [ 4, 2, 1 ]
+        attention_resolutions: [4, 2, 1]
         num_res_blocks: 2
-        channel_mult: [ 1, 2, 4, 4 ]
-        num_head_channels: 64 # need to fix for flash-attn
+        channel_mult: [1, 2, 4, 4]
+        num_head_channels: 64
         use_spatial_transformer: True
         use_linear_in_transformer: True
         transformer_depth: 1
@@ -60,7 +61,6 @@ model:
         embed_dim: 4
         monitor: val/rec_loss
         ddconfig:
-          #attn_type: "vanilla-xformers"
           double_z: true
           z_channels: 4
           resolution: 256
@@ -68,10 +68,10 @@ model:
           out_ch: 3
           ch: 128
           ch_mult:
-          - 1
-          - 2
-          - 4
-          - 4
+            - 1
+            - 2
+            - 4
+            - 4
           num_res_blocks: 2
           attn_resolutions: []
           dropout: 0.0
